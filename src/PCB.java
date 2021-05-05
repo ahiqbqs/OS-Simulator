@@ -17,27 +17,25 @@ public class PCB {
                         // ‘resource-list on blocked processes’
     */
 
-
     //job card info
-    private int jobId;
-    private int codeSize;
-    private int priority;
+    int jobId;
+    int codeSize;
+    int priority;
 
     //data control card info
-    private int inputBufferSize;
-    private int outputBufferSize;
-    private int tempBufferSize;
+    int inputBufferSize;
+    int outputBufferSize;
+    int tempBufferSize;
 
-    private int pc;     // the job’s pc holds the address of the instruction to fetch
+    int pc;     // the job’s pc holds the address of the instruction to fetch
 
     int [] registers;
 
     boolean goodFinish;
 
 
-    public enum state {NEW, READY, RUNNING, BLOCKED, COMPLETE};
-
-    private state status;  //{new, ready, running, blocked}
+    //public enum state {NEW, READY, RUNNING, BLOCKED, COMPLETE};
+    //state status;  //{new, ready, running, blocked}
 
     Memories memories;  // page-table-base, pages, page-size (not yet implemented)
                         // base-registers – logical/physical map, limit-reg (not yet implemented)
@@ -58,98 +56,29 @@ public class PCB {
                 + "inputBufferSize:" + inputBufferSize + ".\t"
                 + "outputBufferSize:" + outputBufferSize + ".\t"
                 + "tempBufferSize:" + tempBufferSize + ".\t"
-                + "status:" + status + ".\t"
+                //+ "status:" + status + ".\t"
                 + "pc:" + pc + ".\t";
         return record;
-    }
-
-    public int getJobId() {
-        return jobId;
-    }
-
-    public void setJobId(int jobId) {
-        this.jobId = jobId;
-    }
-
-    public int getCodeSize() {
-        return codeSize;
-    }
-
-    public void setCodeSize(int codeSize) {
-        this.codeSize = codeSize;
-    }
-
-    public int getPriority() {
-        return priority;
-    }
-
-    public void setPriority(int priority) {
-        this.priority = priority;
-    }
-
-    public int getInputBufferSize() {
-        return inputBufferSize;
-    }
-
-    public void setInputBufferSize(int inputBufferSize) {
-        this.inputBufferSize = inputBufferSize;
-    }
-
-    public int getOutputBufferSize() {
-        return outputBufferSize;
-    }
-
-    public void setOutputBufferSize(int outputBufferSize) {
-        this.outputBufferSize = outputBufferSize;
-    }
-
-    public int getTempBufferSize() {
-        return tempBufferSize;
-    }
-
-    public void setTempBufferSize(int tempBufferSize) {
-        this.tempBufferSize = tempBufferSize;
-    }
-
-    public state getStatus() {
-        return status;
-    }
-
-    public void setStatus(state status) {
-        this.status = status;
     }
 
     public int getJobSizeInMemory() {
         return codeSize + inputBufferSize + outputBufferSize + tempBufferSize;
     }
 
-    public int getPc() {
-        return pc;
-    }
-
-    public void setPc(int pc) {
-        this.pc = pc;
-    }
 }
 
 class Memories {
 
     //int disk_start_reg;     //start address of job in disk.
 
-    private int base_register;  //start address of the code in memory/disk
+    int base_register;  //start address of the code in memory/disk
+
 
     //int limit_register; //length of job
     //int end_register;   //end address of the code in memory
-
     //int input_buffer_loc;  //start address of input buffer
     //int output_buffer_loc; //start address of output buffer;
 
-    public int getBase_register() {
-        return base_register;
-    }
-    public void setBase_register(int base_register) {
-        this.base_register = base_register;
-    }
 
 
 }
@@ -166,7 +95,6 @@ class TrackingInfo {
 
     //Execution Time: runEndTime - runStartTime?
 
-
     /*
     //below fields necessary for context-switching - each time we go from Running->Ready->Running etc, we
     //need to track the times.
@@ -176,6 +104,5 @@ class TrackingInfo {
     long totalTimeWaiting;          //sum of the periods spent waiting in the ready queue
                                     //(timeWaitingInReadyQueue += startingRunningAgainTime - startedWaitingAgainTime)
     */
-
 
 }

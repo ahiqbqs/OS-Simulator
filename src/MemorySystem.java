@@ -1,12 +1,12 @@
-public class MemorySystemClass {
+public class MemorySystem {
 
 
 
     //public short[] registers;
-    public DiskClass disk;
-    public MemoryClass memory;
+    static public DiskClass disk;
+    static public MemoryClass memory;
 
-    public MemorySystemClass() {
+    static public void initMemSystem() {
         //java: int is 32 bits, short is 16 bits.
         //registers = new short[15];
         //disk: 2048 words.  1 word = 4 bytes (or 8 hex characters).

@@ -9,7 +9,7 @@ import static java.lang.Integer.parseInt;
 
 public class Loader {
 
-    public void load(Scanner input, LinkedList<PCB> diskQueue, DiskClass disk) {
+    public void load(Scanner input) {
 
         /////////////////////////////////////////////////////////////////////////////////
         //                              BEGIN LOADER
@@ -44,17 +44,17 @@ public class Loader {
                     String jobIdHex = input.next();
                     int jobId = Integer.parseInt(jobIdHex, 16);
                     //System.out.println("jobid " + jobId);
-                    currJob.setJobId(jobId);
+                    currJob.jobId = jobId;
 
                     String codeSizeHex = input.next();
                     int codeSize = parseInt(codeSizeHex, 16);
                     //System.out.println("codeSize " + codeSize);
-                    currJob.setCodeSize(codeSize);
+                    currJob.codeSize = codeSize;
 
                     String priorityHex = input.next();
                     int priority = Integer.parseInt(priorityHex, 16);
                     //System.out.println("priority " + priorityHex);
-                    currJob.setPriority(priority);
+                    currJob.priority = priority;
 
                     /////////////////////////////////////////////////////////////////////////////////
                     //                           END READING JOB CARD
@@ -62,11 +62,10 @@ public class Loader {
 
 
                     //make a note of where the job starts on the disk.
-                    currJob.memories.setBase_register(diskCounter);
-
-                    currJob.setStatus(PCB.state.NEW);
-                    currJob.setPc(0);               //set program counter to 0.
+                    currJob.memories.base_register = diskCounter;
+                    currJob.pc = 0;               //set program counter to 0.
                     currJob.goodFinish = false;
+                    //currJob.status = PCB.state.NEW;
 
                     /////////////////////////////////////////////////////////////////////////////////
                     //                           BEGIN READING INSTRUCTIONS
@@ -81,7 +80,7 @@ public class Loader {
                             System.exit(0);
                         } else {
                             //System.out.println(instruction);
-                            disk.writeDisk(instruction, diskCounter);
+                            MemorySystem.disk.writeDisk(instruction, diskCounter);
                             diskCounter++;
                         }
                     }
@@ -110,17 +109,17 @@ public class Loader {
                             String inputBufferSizeHex = input.next();
                             int inputBufferSize = Integer.parseInt(inputBufferSizeHex, 16);
                             //System.out.println(inputBufferSize);
-                            currJob.setInputBufferSize(inputBufferSize);
+                            currJob.inputBufferSize = inputBufferSize;
 
                             String outputBufferSizeHex = input.next();
                             int outputBufferSize = Integer.parseInt(outputBufferSizeHex, 16);
                             //System.out.println(outputBufferSize);
-                            currJob.setOutputBufferSize(outputBufferSize);
+                            currJob.outputBufferSize = outputBufferSize;
 
                             String tempBufferSizeHex = input.next();
                             int tempBufferSize = Integer.parseInt(tempBufferSizeHex, 16);
                             //System.out.println(tempBufferSize);
-                            currJob.setTempBufferSize(tempBufferSize);
+                            currJob.tempBufferSize = tempBufferSize;
 
                             /////////////////////////////////////////////////////////////////////////////////
                             //                           END READING DATA CARD
@@ -137,7 +136,7 @@ public class Loader {
                                     System.exit(0);
                                 } else {
                                     //System.out.println(data);
-                                    disk.writeDisk(data, diskCounter);
+                                    MemorySystem.disk.writeDisk(data, diskCounter);
                                     diskCounter++;
                                 }
                             }
@@ -146,9 +145,6 @@ public class Loader {
                             //                           END READING DATA SECTION
                             /////////////////////////////////////////////////////////////////////////////////
 
-
-                            //make a note of where the job ends on the disk.
-                            //currJob.memories.setDisk_end_reg(diskCounter-1);
 
 
                             //check for // END or //END or //end - all are acceptable.
@@ -168,7 +164,7 @@ public class Loader {
                             } else {
                                 //finished reading a job
                                 //endOfJob = true;
-                                diskQueue.add(currJob);
+                                Queues.diskQueue.add(currJob);
                                 //System.out.println(currJob);
                             }
 

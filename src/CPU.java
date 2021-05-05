@@ -5,22 +5,16 @@ import java.util.concurrent.TimeUnit;
 public class CPU {
 
     public static final int NUM_REGISTERS = 16;
-    public static final int DMA_DELAY = 10;//delay DMA by X nanoseconds to simulate actual IO.
-
-    LinkedList<PCB> runningQueue;
-    LinkedList<PCB> doneQueue;
-
-    private MemorySystemClass memSystem;
+    public static final int DMA_DELAY = 10;     //delay DMA by X nanoseconds to simulate actual IO.
 
     boolean logging;        //set to true if we want to output the results(buffers) to a file.
-    //ArrayList<String> outputList;
 
     /////////////////////////////////////////////////////////////////////////////////
     //                  BEGIN variables set/preserved by context switcher
     /////////////////////////////////////////////////////////////////////////////////
     int jobId;
 
-    int [] reg;     //16 registers.
+    int [] reg;             //16 registers.
                             //reg0 = Accumulator.
                             //reg1 = Zero register (0).
 
@@ -39,22 +33,51 @@ public class CPU {
 
     int ioCounter;          //track number of IO operations made.
 
-
     boolean goodFinish;     //track if logical halt reached - program ran to completion successfully.
 
     /////////////////////////////////////////////////////////////////////////////////
     //                  END variables set/preserved by context switcher
     /////////////////////////////////////////////////////////////////////////////////
 
-    public CPU (MemorySystemClass mem, LinkedList<PCB> runningQueue, LinkedList<PCB> doneQueue, boolean logging) {
+
+    public CPU (boolean logging) {
         reg = new int[NUM_REGISTERS];
-        memSystem = mem;   //give the CPU access to the memory.
-
-        this.runningQueue = runningQueue;
-        this.doneQueue = doneQueue;
-
         this.logging = logging;
     }
+
+
+    public void runCPU() {
+
+        int currLine;
+        Instruction instruction;
+
+        while (pc < codeSize) {
+            currLine = fetch(pc);
+            instruction = decode(currLine);
+            //printInstruction(instruction);
+            execute(instruction);
+            //printDataBuffers();
+        }
+
+        //PCB currPCB = Queues.runningQueue.getFirst();
+        //save PCB info back into PCB
+        //Dispatcher.save(currPCB, this);
+
+        /*
+        if (goodFinish) { //job successfully completed
+            if (logging)
+                currPCB.trackingInfo.buffers = outputResults();
+            currPCB.trackingInfo.runEndTime = System.nanoTime();
+
+            Queues.runningQueue.pop();
+            Queues.doneQueue.add(currPCB);
+        }
+        */
+
+    }
+
+
+
 
     // The Decode method is a part of the CPU. Its function is to completely decode a fetched instruction –
     // using the different kinds of address translation schemes of the CPU architecture.
@@ -70,12 +93,9 @@ public class CPU {
         // why & 0b111111 in the code below?  because java int is signed.
         // we need to remove the sign from the starting 111111's (if they exist)
         int opcode = temp & 0b111111;
-        //System.out.print(opcode + "\t");
 
-        // why & 0b11 in the code below?  because java int is signed.
-        // we need to remove the sign, if it exists (the starting 111111's)
+        // & 0b11 to remove the sign, if it exists (the starting 111111's)
         int type = (temp >> 6) & 0b11;
-        //System.out.print(type + "\t");
 
         switch (type) {
             case Instruction.ARITHMETIC:
@@ -85,40 +105,29 @@ public class CPU {
                 reg2 = currLine & 0b1111;
                 currLine >>= 4;
                 reg1 = currLine & 0b1111;
-                //System.out.println(reg1 + "\t"+ reg2 + "\t" + reg3);
                 currInst = new Instruction(opcode, reg1, reg2, reg3);
                 break;
 
             case Instruction.CBI:
                 reg3 = currLine & 0xFFFF; //address
-                //reg3 = reg3 / 4;            //convert from bytes to words (4 bytes/word)
-                //                            //program file addressing is in bytes
-
                 currLine >>= 16;
                 reg2 = currLine & 0b1111;
                 currLine >>= 4;
                 reg1 = currLine & 0b1111;
-                //System.out.println(reg1 + "\t"+ reg2 + "\t" + reg3);
                 currInst = new Instruction(opcode, reg1, reg2, reg3);
                 break;
 
             case Instruction.JUMP:
                 reg1 = currLine & 0xFFFFFF; //24-bit address
-                //reg1 = reg1 / 4;            //convert from bytes to words (4 bytes/word)
-                //                            //program file addressing is in bytes
-                //System.out.println(reg1 + "\t");
                 currInst = new Instruction(opcode, reg1, 0, 0);
                 break;
 
             case Instruction.IO:
                 reg3 = currLine & 0xFFFF; //address
-                //reg3 = reg3 / 4;          //convert from bytes to words (4 bytes/word)
-                //                          //program file addressing is in bytes
                 currLine >>= 16;
                 reg2 = currLine & 0b1111;
                 currLine >>= 4;
                 reg1 = currLine & 0b1111;
-                //System.out.println(reg1 + "\t"+ reg2 + "\t" + reg3);
                 currInst = new Instruction(opcode, reg1, reg2, reg3);
                 break;
 
@@ -131,14 +140,12 @@ public class CPU {
         return currInst;
     }
 
-
     //Execute
     //This method is essentially a switch-loop of the CPU.
     // One of its key functions is to increment the PC value on ‘successful’ execution of the current instruction.
     // Note also that if an I/O operation is done via an interrupt, or due to any other preemptive instruction,
     // the job is suspended until the DMA-Channel method completes the read/write operation, or the interrupt is serviced.
     public void execute(Instruction instruction) {
-
 
         switch (instruction.opcode) {
             //handle DMA (IO) instructions.
@@ -272,9 +279,6 @@ public class CPU {
                 pc = (instruction.reg1 / 4) - 1;
                 break;
 
-
-
-
             default:
                 System.err.println("Invalid opcode in execute: " + instruction.type);
                 break;
@@ -294,7 +298,7 @@ public class CPU {
     public int fetch (int address) {
         //check that the code being fetched is inside the job's code section
         if ((address >= 0) && (address < codeSize)) {
-            return memSystem.memory.readMemoryAddress(getEffectiveAddress(address));
+            return MemorySystem.memory.readMemoryAddress(getEffectiveAddress(address));
         }
         else {
             System.err.println ("Error.  Invalid fetch at address: " + address);
@@ -312,7 +316,7 @@ public class CPU {
 
         //check if address is in bounds of the current job's DATA section.
         if ((address >= codeSize) && (address <= endData_reg)) {
-            return memSystem.memory.readMemoryAddress(getEffectiveAddress(address));
+            return MemorySystem.memory.readMemoryAddress(getEffectiveAddress(address));
         }
         else {
             System.err.println ("Error.  Invalid memory write at address: " + address);
@@ -329,7 +333,7 @@ public class CPU {
 
         //check if address is in bounds of the current job's DATA section.
         if ((address >= codeSize) && (address <= endData_reg)) {
-            memSystem.memory.writeMemoryAddress(getEffectiveAddress(address), data);
+            MemorySystem.memory.writeMemoryAddress(getEffectiveAddress(address), data);
         }
         else {
             System.err.println ("Error.  Invalid memory read at address: " + address);
@@ -341,59 +345,9 @@ public class CPU {
         return base_reg + offset;
     }
 
-    //public int getEffectiveAddress (int iReg, int offset) {
-    //    return base_reg + reg[iReg] + offset;
-    //}
-
-
-    public void runCPU() {
-
-        //Scanner scan = new Scanner (System.in);
-        int currLine;
-        Instruction instruction;
-
-        PCB currPCB = runningQueue.getFirst();
-
-        //printDataBuffers();
-
-        while (pc < codeSize) {
-            currLine = fetch(pc);
-            //System.out.println (currLine);
-
-            instruction = decode(currLine);
-            //printInstruction(instruction);
-
-            execute(instruction);
-            //printDataBuffers();
-            //scan.nextLine();
-        }
-
-        //printDataBuffers();
-
-        //save PCB info back into PCB
-        Dispatcher.save(currPCB, this);
-        if (goodFinish) { //job successfully completed
-            currPCB.setStatus(PCB.state.COMPLETE);
-
-            if (logging)
-                currPCB.trackingInfo.buffers = outputResults();
-
-            //job done, so pop from running queue.
-            runningQueue.pop();
-            //add job to doneQueue (for reporting purposes)
-            doneQueue.add(currPCB);
-            currPCB.trackingInfo.runEndTime = System.nanoTime();
-            //System.out.println ("Job:" + currPCB.getJobId() + "\tNumber of io operations: " + ioCounter);
-            //System.out.print (outputResults());
-
-        }
-
-    }
-
 
     //debugging method - prints current instruction.
     public void printInstruction(Instruction instruction) {
-
 
         String [] opStrings = {"RD", "WR", "ST", "LW", "MOV", "ADD", "SUB", "MUL", "DIV", "AND", "OR", "MOVI", "ADDI",
                 "MULI", "DIVI", "LDI", "SLT", "SLTI", "HLT", "NOP", "JMP", "BEQ", "BNE", "BEZ", "BNZ", "BGZ", "BLZ"};
@@ -426,6 +380,27 @@ public class CPU {
                 break;
 
         }
+    }
+
+    //for printing the results of the job to a file.
+    public String outputResults() {
+
+        StringBuilder results = new StringBuilder();
+        results.append("Job ID:\t" + jobId + "\r\nInput:\t");
+        for (int i = 0; i < inputBufferSize; i++) {
+            results.append(readBuffer((codeSize + i)*4) + " ");  //*4 to convert from words to bytes
+        }
+        results.append("\r\nOutput:\t");
+        for (int i = 0; i < outputBufferSize; i++) {
+            results.append(readBuffer((codeSize + inputBufferSize + i)*4) + " ");  //*4 to convert from words to bytes
+        }
+        results.append("\r\nTemp:\t");
+        for (int i = 0; i < tempBufferSize; i++) {
+            results.append(readBuffer((codeSize + inputBufferSize + outputBufferSize + i)*4) + " ");  //*4 to convert from words to bytes
+        }
+        results.append("\r\n");
+
+        return results.toString();
     }
 
 
@@ -462,26 +437,6 @@ public class CPU {
         System.out.println();
     }
 
-    //for printing the results of the job to a file.
-    public String outputResults() {
-
-        StringBuilder results = new StringBuilder();
-        results.append("Job ID:\t" + jobId + "\r\nInput:\t");
-        for (int i = 0; i < inputBufferSize; i++) {
-            results.append(readBuffer((codeSize + i)*4) + " ");  //*4 to convert from words to bytes
-        }
-        results.append("\r\nOutput:\t");
-        for (int i = 0; i < outputBufferSize; i++) {
-            results.append(readBuffer((codeSize + inputBufferSize + i)*4) + " ");  //*4 to convert from words to bytes
-        }
-        results.append("\r\nTemp:\t");
-        for (int i = 0; i < tempBufferSize; i++) {
-            results.append(readBuffer((codeSize + inputBufferSize + outputBufferSize + i)*4) + " ");  //*4 to convert from words to bytes
-        }
-        results.append("\r\n");
-
-        return results.toString();
-    }
 
 
     //separate thread to handle DMA instructions.

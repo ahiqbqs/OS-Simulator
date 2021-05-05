@@ -3,8 +3,8 @@ import java.util.LinkedList;
 public class ShortScheduler {
 
     //pick a job to run off of the Ready Queue.
-    public static void Schedule (LinkedList<PCB> readyQueue, LinkedList<PCB> runningQueue) {
-        runningQueue.push(readyQueue.pop());
-        runningQueue.getFirst().setStatus(PCB.state.RUNNING);
+    public static void schedule () {
+        Queues.runningQueue.push(Queues.readyQueue.pop());
+        //Queues.runningQueue.getFirst().status = PCB.state.RUNNING;
     }
 }
