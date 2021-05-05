@@ -1,3 +1,5 @@
+import java.util.Arrays;
+
 public class Dispatcher {
 
     //The Dispatcher method assigns a process to the CPU.
@@ -17,11 +19,16 @@ public class Dispatcher {
         cpu.inputBufferSize = currJob.inputBufferSize;
         cpu.outputBufferSize = currJob.outputBufferSize;
         cpu.tempBufferSize = currJob.tempBufferSize;
-        cpu.endData_reg = currJob.getJobSizeInMemory() - 1;
+        cpu.jobSize = currJob.getJobSizeInMemory();
         cpu.goodFinish = currJob.goodFinish;  //set to true when job completes properly (HLT) - this variable may not be necessary.
         cpu.ioCounter = currJob.trackingInfo.ioCounter;
 
         currJob.trackingInfo.runStartTime = System.nanoTime();
+
+        //copy job into the cache
+        cpu.cache.clearCache();
+        System.arraycopy(MemorySystem.memory.memArray, cpu.base_reg, cpu.cache.arr, 0, currJob.getJobSizeInMemory());
+
     }
 
     //save PCB info from CPU back into PCB
@@ -34,11 +41,16 @@ public class Dispatcher {
         currJob.trackingInfo.ioCounter = cpu.ioCounter;
 
         if (currJob.goodFinish) { //job successfully completed
+
             if (cpu.logging)
                 currJob.trackingInfo.buffers = cpu.outputResults();
             currJob.trackingInfo.runEndTime = System.nanoTime();
             Queues.runningQueue.pop();
             Queues.doneQueue.add(currJob);
+        }
+        else {
+            System.err.println ("Unexpected end of program.");
+            System.exit(-1);
         }
 
 

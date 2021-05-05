@@ -1,4 +1,5 @@
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.concurrent.TimeUnit;
 
@@ -7,7 +8,29 @@ public class CPU {
     public static final int NUM_REGISTERS = 16;
     public static final int DMA_DELAY = 10;     //delay DMA by X nanoseconds to simulate actual IO.
 
+    public static final int CACHE_SIZE = 80;    //longest program is 72 words0
+
+    class Cache {
+        int[] arr;
+        boolean[] modified;
+
+        public void clearCache() {
+            Arrays.fill(arr, 0);
+            Arrays.fill(modified, false);
+        }
+
+        public Cache() {
+            arr = new int[CACHE_SIZE];
+            modified = new boolean[CACHE_SIZE];
+        }
+    }
+    Cache cache;
+
+
     boolean logging;        //set to true if we want to output the results(buffers) to a file.
+
+
+
 
     /////////////////////////////////////////////////////////////////////////////////
     //                  BEGIN variables set/preserved by context switcher
@@ -29,7 +52,7 @@ public class CPU {
     int tempBufferSize;
 
     //to speed things up
-    int endData_reg;        //last line of data/job (codeSize + inputBufferSize + outputBufferSize + tempBufferSize - 1)
+    int jobSize;            //codeSize + inputBufferSize + outputBufferSize + tempBufferSize
 
     int ioCounter;          //track number of IO operations made.
 
@@ -42,6 +65,8 @@ public class CPU {
 
     public CPU (boolean logging) {
         reg = new int[NUM_REGISTERS];
+        cache = new Cache();
+
         this.logging = logging;
     }
 
@@ -58,6 +83,23 @@ public class CPU {
             execute(instruction);
             //printDataBuffers();
         }
+
+        if (goodFinish) {
+
+            //DMA thread: copy modified words back from cache to memory
+            DMA dma = new DMA();
+            Thread dmaThread = new Thread(dma);
+            dmaThread.start();
+            try {
+                dmaThread.join();
+            }
+            catch (InterruptedException ie) {
+                System.err.println(ie.toString());
+            }
+
+            System.arraycopy(cache.arr, 0, MemorySystem.memory.memArray, base_reg, jobSize);
+        }
+
 
         //PCB currPCB = Queues.runningQueue.getFirst();
         //save PCB info back into PCB
@@ -148,28 +190,37 @@ public class CPU {
     public void execute(Instruction instruction) {
 
         switch (instruction.opcode) {
-            //handle DMA (IO) instructions.
-            case Instruction.ST:
-            case Instruction.LW:
-            case Instruction.RD:
-            case Instruction.WR:
-                DMA dma = new DMA(instruction);
-                Thread dmaThread = new Thread(dma);
-                dmaThread.start();
-                try {
-                    dmaThread.join();
-                }
-                catch (InterruptedException ie) {
-                    System.err.println(ie.toString());
-                }
+
+            //case Instruction.IO:
+            case Instruction.RD:    //Reads content of I/P buffer into a accumulator
+                reg[instruction.reg1] = readCache(instruction.reg3 + reg[instruction.reg2]);
+                ioCounter++;
                 break;
+
+            //case Instruction.IO:
+            case Instruction.WR:    //Writes the content of accumulator into O/P buffer
+                if (instruction.reg3 != 0)
+                    writeCache(instruction.reg3, reg[instruction.reg1]);
+                else
+                    writeCache(reg[instruction.reg2], reg[instruction.reg1]);
+                ioCounter++;
+                break;
+
+            //case Instruction.CBI:
+            case Instruction.LW: //Loads the content of an address into a reg.
+                reg[instruction.reg2] = readCache(instruction.reg3 + reg[instruction.reg1]);
+                ioCounter++;
+                break;
+
+            //case Instruction.CBI:
+            case Instruction.ST: //Stores content of a reg. into an address
+                writeCache(reg[instruction.reg2] + instruction.reg3, reg[instruction.reg1]);
+                ioCounter++;
+                break;
+
+
 
             //case Instruction.ARITHMETIC:
-            case Instruction.MOV: //Transfers the content of one register into another
-                //reg[rCommand.regD] = reg[rCommand.regS2];
-                reg[instruction.reg3 + instruction.reg1] = reg[instruction.reg2];
-                break;
-
             case Instruction.ADD: //Adds content of two S-regs into D-reg
                 reg[instruction.reg3] = reg[instruction.reg1] + reg[instruction.reg2];
                 break;
@@ -192,6 +243,11 @@ public class CPU {
 
             case Instruction.OR: //Logical OR of two S-regs into D-reg
                 reg[instruction.reg3] = reg[instruction.reg1] | reg[instruction.reg2];
+                break;
+
+            case Instruction.MOV: //Transfers the content of one register into another
+                //reg[rCommand.regD] = reg[rCommand.regS2];
+                reg[instruction.reg3 + instruction.reg1] = reg[instruction.reg2];
                 break;
 
             case Instruction.SLT: //Sets the D-reg to 1 if  first S-reg is less than second B-reg,
@@ -269,7 +325,6 @@ public class CPU {
                     pc = (instruction.reg3 / 4) - 1;
                 break;
 
-
             //case Instruction.JUMP:
             case Instruction.HLT: //Logical end of program
                 goodFinish = true;
@@ -295,6 +350,7 @@ public class CPU {
     // address to the corresponding absolute address,
     // using the base-register value and a ‘calculated’ offset/address displacement.
     // The Fetch, therefore, also supports the Decode method of the CPU.
+    /*
     public int fetch (int address) {
         //check that the code being fetched is inside the job's code section
         if ((address >= 0) && (address < codeSize)) {
@@ -306,17 +362,32 @@ public class CPU {
             return -1;
         }
     }
+    */
+    //fetch from the cache.
+    public int fetch (int address) {
+        //check that the code being fetched is inside the job's code section
+        if ((address >= 0) && (address < codeSize)) {
+            //return MemorySystem.memory.readMemoryAddress(getEffectiveAddress(address));
+            return cache.arr[address];
+        }
+        else {
+            System.err.println ("Error.  Invalid fetch at address: " + address);
+            System.exit(-1);
+            return -1;
+        }
+    }
 
 
-    //read the specified memory address
-    public int readBuffer(int address) {
+    //read the specified memory address - but from the cache.
+    public int readCache(int address) {
         //Convert from bytes to words - the instruction addresses go by bytes.
         //e.g. pc = pc + 4, we need pc = pc + 1.  if address, we need address/4.
         address = address/4;
 
         //check if address is in bounds of the current job's DATA section.
-        if ((address >= codeSize) && (address <= endData_reg)) {
-            return MemorySystem.memory.readMemoryAddress(getEffectiveAddress(address));
+        if ((address >= codeSize) && (address < jobSize)) {
+            //return MemorySystem.memory.readMemoryAddress(getEffectiveAddress(address));
+            return cache.arr[address];
         }
         else {
             System.err.println ("Error.  Invalid memory write at address: " + address);
@@ -325,15 +396,18 @@ public class CPU {
         }
     }
 
-    //write the specified memory address
-    public void writeBuffer(int address, int data) {
+
+    //write the specified memory address - but to the cache
+    public void writeCache(int address, int data) {
         //Convert from bytes to words - the instruction addresses go by bytes.
         //e.g. pc = pc + 4, we need pc = pc + 1.  if address, we need address/4.
         address = address/4;
 
         //check if address is in bounds of the current job's DATA section.
-        if ((address >= codeSize) && (address <= endData_reg)) {
-            MemorySystem.memory.writeMemoryAddress(getEffectiveAddress(address), data);
+        if ((address >= codeSize) && (address < jobSize)) {
+            //MemorySystem.memory.writeMemoryAddress(getEffectiveAddress(address), data);
+            cache.arr[address] = data;
+            cache.modified[address] = true;
         }
         else {
             System.err.println ("Error.  Invalid memory read at address: " + address);
@@ -386,17 +460,22 @@ public class CPU {
     public String outputResults() {
 
         StringBuilder results = new StringBuilder();
-        results.append("Job ID:\t" + jobId + "\r\nInput:\t");
+        results.append("Job ID:\t");
+        results.append(jobId);
+        results.append("\r\nInput:\t");
         for (int i = 0; i < inputBufferSize; i++) {
-            results.append(readBuffer((codeSize + i)*4) + " ");  //*4 to convert from words to bytes
+            results.append(readCache((codeSize + i)*4)); //*4 to convert from words to bytes
+            results.append(" ");
         }
         results.append("\r\nOutput:\t");
         for (int i = 0; i < outputBufferSize; i++) {
-            results.append(readBuffer((codeSize + inputBufferSize + i)*4) + " ");  //*4 to convert from words to bytes
+            results.append(readCache((codeSize + inputBufferSize + i)*4));//*4 to convert from words to bytes
+            results.append(" ");
         }
         results.append("\r\nTemp:\t");
         for (int i = 0; i < tempBufferSize; i++) {
-            results.append(readBuffer((codeSize + inputBufferSize + outputBufferSize + i)*4) + " ");  //*4 to convert from words to bytes
+            results.append(readCache((codeSize + inputBufferSize + outputBufferSize + i)*4));//*4 to convert from words to bytes
+            results.append(" ");
         }
         results.append("\r\n");
 
@@ -417,20 +496,20 @@ public class CPU {
 
         System.out.print("Input:\t");
         for (int i = 0; i < inputBufferSize; i++) {
-            System.out.print(readBuffer((codeSize + i)*4) + " ");  //*4 to convert from words to bytes
+            System.out.print(readCache((codeSize + i)*4) + " ");  //*4 to convert from words to bytes
         }
         System.out.println();
 
         System.out.print("Output:\t");
         for (int i = 0; i < outputBufferSize; i++) {
-            System.out.print(readBuffer((codeSize + inputBufferSize + i)*4) + " ");  //*4 to convert from words to bytes
+            System.out.print(readCache((codeSize + inputBufferSize + i)*4) + " ");  //*4 to convert from words to bytes
         }
 
         System.out.println();
 
         System.out.print("Temp:\t");
         for (int i = 0; i < tempBufferSize; i++) {
-            System.out.print(readBuffer((codeSize + inputBufferSize + outputBufferSize + i)*4) + " ");  //*4 to convert from words to bytes
+            System.out.print(readCache((codeSize + inputBufferSize + outputBufferSize + i)*4) + " ");  //*4 to convert from words to bytes
         }
 
         System.out.println();
@@ -439,52 +518,23 @@ public class CPU {
 
 
 
-    //separate thread to handle DMA instructions.
+    //separate thread to handle DMA transfer
     class DMA implements Runnable {
-
-        Instruction dmaCommand;
 
         public void run() {
             handleDMA();
         }
 
-        public DMA(Instruction dmaCommand) {
-            this.dmaCommand = dmaCommand;
-        }
+        public DMA() {}
 
         public void handleDMA() {
-            //handle DMA (IO) instructions.
-
-            switch (dmaCommand.opcode) {
-                //case Instruction.IO:
-                case Instruction.RD:    //Reads content of I/P buffer into a accumulator
-                    reg[dmaCommand.reg1] = readBuffer(dmaCommand.reg3 + reg[dmaCommand.reg2]);
-                    break;
-
-                case Instruction.WR:    //Writes the content of accumulator into O/P buffer
-                    if (dmaCommand.reg3 != 0)
-                        writeBuffer(dmaCommand.reg3, reg[dmaCommand.reg1]);
-                    else
-                        writeBuffer(reg[dmaCommand.reg2], reg[dmaCommand.reg1]);
-                    break;
-
-                //case Instruction.CBI:
-                case Instruction.ST: //Stores content of a reg. into an address
-                    writeBuffer(reg[dmaCommand.reg2] + dmaCommand.reg3, reg[dmaCommand.reg1]);
-                    break;
-
-                case Instruction.LW: //Loads the content of an address into a reg.
-                    reg[dmaCommand.reg2] = readBuffer(dmaCommand.reg3 + reg[dmaCommand.reg1]);
-                    break;
-
-                default:
-                    System.err.println("Invalid DMA opcode in execute: " + dmaCommand.type);
-                    break;
-            }
-
-            ioCounter++;
             try {
-                TimeUnit.NANOSECONDS.sleep(DMA_DELAY);
+                for (int i = 0; i < jobSize; i++) {
+                    if (cache.modified[i]) {
+                        MemorySystem.memory.writeMemoryAddress(getEffectiveAddress(i), cache.arr[i]);
+                        TimeUnit.NANOSECONDS.sleep(DMA_DELAY);
+                    }
+                }
             }
             catch (InterruptedException ie) {
                 System.err.println("Invalid DMA handler interruption: " + ie.toString());
