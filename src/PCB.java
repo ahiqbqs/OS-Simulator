@@ -69,32 +69,27 @@ public class PCB {
 
 class Memories {
 
-    //int disk_start_reg;     //start address of job in disk.
-
     int base_register;  //start address of the code in memory/disk
 
-
+    //int disk_start_reg;     //start address of job in disk.
     //int limit_register; //length of job
     //int end_register;   //end address of the code in memory
     //int input_buffer_loc;  //start address of input buffer
     //int output_buffer_loc; //start address of output buffer;
-
-
-
 }
 
 class TrackingInfo {
+
 
     int ioCounter;                  //number of io operations each process made
     String buffers;                 //at job completion, output buffers written to this String.
 
     long waitStartTime;             //time entered Ready Queue (set by Long Term Scheduler)
     long runStartTime;              //time first started executing (entered Running Queue, set by Dispatcher)
-
     long runEndTime;                //Completion Time = runEndTime - waitStartTime?
 
-    //Execution Time: runEndTime - runStartTime?
 
+    //Execution Time: runEndTime - runStartTime?
     /*
     //below fields necessary for context-switching - each time we go from Running->Ready->Running etc, we
     //need to track the times.

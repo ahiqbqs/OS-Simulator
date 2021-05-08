@@ -1,7 +1,5 @@
 public class MemorySystem {
 
-
-
     //public short[] registers;
     static public DiskClass disk;
     static public MemoryClass memory;

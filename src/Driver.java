@@ -1,17 +1,27 @@
+import java.io.File;
 import java.io.FileNotFoundException;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Scanner;
 import java.util.LinkedList;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+import static java.lang.System.exit;
 
 public class Driver {
 
+    public static final boolean CHECK_OUTPUT_MODE = true;      //to check output when complete.
+    public static boolean logging;       //set to true if we want to output the results(buffers) to a file.
 
+    static ExecutorService executor;
+    static CPU [] cpu;
+    static SyncObject syncObject;
 
 
     public static void main(String[] args) throws FileNotFoundException {
 
         Scanner userInput = new Scanner (System.in);
-        boolean logging = false;
         int iterations;
 
         ArrayList<MemoryClass> coreDumpArray;
@@ -37,6 +47,7 @@ public class Driver {
             iterations = 1;
         }
         else {
+            logging = false;
             System.out.print("Enter Number of iterations:\t");
             iterations = userInput.nextInt();
         }
@@ -57,7 +68,15 @@ public class Driver {
                 MemorySystem.initMemSystem();
                 Loader loader = new Loader();
                 LongScheduler longScheduler = new LongScheduler(policy);
-                CPU cpu = new CPU(logging);
+                syncObject = new SyncObject();
+
+                cpu = new CPU[CPU.CPU_COUNT];
+                executor = Executors.newFixedThreadPool(CPU.CPU_COUNT);
+
+                for (int j = 0; j < CPU.CPU_COUNT; j++) {
+                    cpu[j] = new CPU(j);
+                    executor.execute(cpu[j]);
+                }
 
                 coreDumpArray = new ArrayList();
 
@@ -69,24 +88,35 @@ public class Driver {
                 /////////////////////////////////////////////////////////////////////////////////
                 do {
                     longScheduler.schedule();       //load processes into memory from disk.
-                    ShortScheduler.schedule();      //pick one job from the ready Queue to run.
+                    ShortScheduler.schedule();      //pick one job from the ready Queue to run on a CPU
 
-                    //prepare job to run on CPU, extract info from PCB and set CPU's pc, registers, etc.
-                    Dispatcher.dispatch(Queues.runningQueue.getFirst(), cpu);
+                    if (Queues.readyQueue.size() == 0) {
 
-                    cpu.runCPU();
+                        //need to wait for the CPUs to finish running before longScheduler overwrites memory.
+                        //and before we do a core dump.
+                        while (Queues.freeCpuQueue.size() < CPU.CPU_COUNT) {
+                            synchronized (syncObject) {
+                                try {
+                                    syncObject.wait();
+                                }
+                                catch (InterruptedException ie) {
+                                    System.err.println(ie.toString());
+                                }
+                            }
 
-                    Dispatcher.save(Queues.runningQueue.getFirst(), cpu);
-                    //scan.nextLine();
+                        }
 
-
-                    if ((logging) && (Queues.readyQueue.size() == 0)) {
-                        //if the readyQueue is empty, then we have processed all the jobs in the ready queue
-                        //and we are ready to do a core dump.
-                        saveMemoryForCoreDump(coreDumpArray);
+                        if (logging) {
+                            //if the readyQueue is empty, then we have processed all the jobs in the ready queue
+                            //and we are ready to do a core dump.
+                            saveMemoryForCoreDump(coreDumpArray);
+                        }
                     }
                 }
+
                 while (checkForMoreJobs());
+
+
                 /////////////////////////////////////////////////////////////////////////////////
                 //                          END Main Driver Loop
                 /////////////////////////////////////////////////////////////////////////////////
@@ -94,6 +124,10 @@ public class Driver {
                 if (logging) {
                     writeOutputFile ();
                     writeCoreDumpFiles (coreDumpArray);
+
+                    if (CHECK_OUTPUT_MODE)
+                        //compare output to gold standard
+                        checkOutputIsCorrect();
                 }
 
                 //create timing array (if not already created)
@@ -103,6 +137,17 @@ public class Driver {
                 saveTimingDataForThisIteration(i, timingArray);
 
 
+                //shutdown the CPU's.
+                for (int k = 0; k < CPU.CPU_COUNT; k++) {
+                    try {
+                        Queues.cpuActiveQueue[k].put(-1);
+                    }
+                    catch (InterruptedException ie) {
+                        System.err.println(ie.toString());
+                    }
+                }
+
+                executor.shutdown();
             }
         }
 
@@ -113,23 +158,56 @@ public class Driver {
         // Process and Output Timing Data
         avgTimingArray = new long [numJobs][numTimingFields];
         outputTimingData(avgTimingArray, timingArray, numJobs, iterations);
-
     }
 
 
 
-
-
-
-
     public static boolean checkForMoreJobs () {
-        return ((Queues.diskQueue.size() != 0) || (Queues.readyQueue.size() != 0) || (Queues.runningQueue.size() != 0));
+        //return ((Queues.diskQueue.size() != 0) || (Queues.readyQueue.size() != 0) || (Queues.runningQueue.size() != 0));
+        return ((Queues.diskQueue.size() != 0) || (Queues.readyQueue.size() != 0));
     }
 
     public static void saveMemoryForCoreDump(ArrayList<MemoryClass> coreDumpArray) {
         MemoryClass currCoreDump = new MemoryClass();
         System.arraycopy(MemorySystem.memory.memArray, 0, currCoreDump.memArray, 0, MemorySystem.memory.MEM_SIZE);
         coreDumpArray.add(currCoreDump);
+    }
+
+
+    //debugging method: compares the output to an output file that we know is correct.
+    public static boolean checkOutputIsCorrect() throws FileNotFoundException {
+
+        java.io.File goodFile = new java.io.File("CorrectOutput.txt");
+        try ( //try with resources (auto-closes Scanner)
+            Scanner goodInput = new Scanner(goodFile);
+        ) {
+            //String goodResults = new Scanner(goodFile).useDelimiter("\\Z").next();
+
+            ArrayList<String> goodResults = new ArrayList<>();
+
+            while (goodInput.hasNext()) {
+                StringBuilder temp = new StringBuilder();
+                for (int i = 0; i < 4; i++) {
+                    temp.append(goodInput.nextLine());
+                    temp.append("\r\n");
+                }
+                goodResults.add(temp.toString());
+            }
+
+            System.out.println (goodResults.size());
+
+            Queues.doneQueue.sort((PCB o1, PCB o2) -> o1.jobId - o2.jobId);
+
+            for (int i = 0; i < goodResults.size(); i++) {
+                boolean isMatch = goodResults.get(i).equals(Queues.doneQueue.get(i).trackingInfo.buffers);
+                if (!isMatch) {
+                    System.out.println("Warning: output does not match gold standard.");
+                    System.out.println(goodResults.get(i));
+                    System.out.println(Queues.doneQueue.get(i).trackingInfo.buffers);
+                }
+            }
+            return false;
+        }
     }
 
 

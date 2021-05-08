@@ -1,5 +1,4 @@
 import java.util.Scanner;
-import java.util.LinkedList;
 import static java.lang.Integer.parseInt;
 
 

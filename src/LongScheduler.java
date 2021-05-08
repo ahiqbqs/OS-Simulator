@@ -1,6 +1,3 @@
-import java.util.LinkedList;
-import java.util.Comparator;
-
 //Long-Term Scheduler.
 
 //Quick and Dirty algorithm: load 15 jobs at at time into Memory, and load their PCB's onto the ReadyQueue.

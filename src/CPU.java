@@ -1,14 +1,14 @@
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.LinkedList;
 import java.util.concurrent.TimeUnit;
 
-public class CPU {
+public class CPU implements Runnable {
 
     public static final int NUM_REGISTERS = 16;
-    public static final int DMA_DELAY = 10;     //delay DMA by X nanoseconds to simulate actual IO.
+    public static final int DMA_DELAY = 20;     //delay DMA by X nanoseconds to simulate actual IO.
 
     public static final int CACHE_SIZE = 80;    //longest program is 72 words0
+
+    public final static int CPU_COUNT = 4;
 
     class Cache {
         int[] arr;
@@ -27,9 +27,7 @@ public class CPU {
     Cache cache;
 
 
-    boolean logging;        //set to true if we want to output the results(buffers) to a file.
-
-
+    int cpuId;
 
 
     /////////////////////////////////////////////////////////////////////////////////
@@ -63,61 +61,50 @@ public class CPU {
     /////////////////////////////////////////////////////////////////////////////////
 
 
-    public CPU (boolean logging) {
+    public CPU (int cpuId) {
         reg = new int[NUM_REGISTERS];
         cache = new Cache();
 
-        this.logging = logging;
+        this.cpuId = cpuId;
     }
 
 
-    public void runCPU() {
+    public void run() {
 
-        int currLine;
-        Instruction instruction;
+        int cpuShutdownCheck;
 
-        while (pc < codeSize) {
-            currLine = fetch(pc);
-            instruction = decode(currLine);
-            //printInstruction(instruction);
-            execute(instruction);
-            //printDataBuffers();
-        }
+        try {
+            while (!Thread.currentThread().isInterrupted()) {
 
-        if (goodFinish) {
+                cpuShutdownCheck = Queues.cpuActiveQueue[cpuId].take();
+                if (cpuShutdownCheck == -1) {
+                    return;
+                }
 
-            //DMA thread: copy modified words back from cache to memory
-            DMA dma = new DMA();
-            Thread dmaThread = new Thread(dma);
-            dmaThread.start();
-            try {
-                dmaThread.join();
+                while (pc < codeSize) {
+                    execute(decode(fetch(pc)));
+                }
+
+                if (goodFinish) {
+
+                    //DMA thread: copy modified words back from cache to memory
+                    DMA dma = new DMA();
+                    Thread dmaThread = new Thread(dma);
+                    dmaThread.start();
+                    dmaThread.join();
+                }
+
+                Dispatcher.save(this);
+
+                synchronized (Driver.syncObject) {      //notify Driver that CPU is done running a job.
+                    Driver.syncObject.notify();
+                }
             }
-            catch (InterruptedException ie) {
-                System.err.println(ie.toString());
-            }
-
-            System.arraycopy(cache.arr, 0, MemorySystem.memory.memArray, base_reg, jobSize);
+        } catch (InterruptedException ie) {
+            System.err.println(ie.toString());
         }
-
-
-        //PCB currPCB = Queues.runningQueue.getFirst();
-        //save PCB info back into PCB
-        //Dispatcher.save(currPCB, this);
-
-        /*
-        if (goodFinish) { //job successfully completed
-            if (logging)
-                currPCB.trackingInfo.buffers = outputResults();
-            currPCB.trackingInfo.runEndTime = System.nanoTime();
-
-            Queues.runningQueue.pop();
-            Queues.doneQueue.add(currPCB);
-        }
-        */
 
     }
-
 
 
 
@@ -342,27 +329,7 @@ public class CPU {
         pc++;
     }
 
-    //Fetch
-    //With support from the Memory module/method, this method fetches instructions or data from RAM
-    // depending on the content of the CPU’s program counter (PC).
-    // On instruction fetch, the PC value should point to the next instruction to be fetched.
-    // The Fetch method therefore calls the Effective-Address method to translate the logical
-    // address to the corresponding absolute address,
-    // using the base-register value and a ‘calculated’ offset/address displacement.
-    // The Fetch, therefore, also supports the Decode method of the CPU.
-    /*
-    public int fetch (int address) {
-        //check that the code being fetched is inside the job's code section
-        if ((address >= 0) && (address < codeSize)) {
-            return MemorySystem.memory.readMemoryAddress(getEffectiveAddress(address));
-        }
-        else {
-            System.err.println ("Error.  Invalid fetch at address: " + address);
-            System.exit(-1);
-            return -1;
-        }
-    }
-    */
+
     //fetch from the cache.
     public int fetch (int address) {
         //check that the code being fetched is inside the job's code section
@@ -419,6 +386,32 @@ public class CPU {
         return base_reg + offset;
     }
 
+    //for printing the results of the job to a file.
+    public String outputResults() {
+
+        StringBuilder results = new StringBuilder();
+        results.append("Job ID:\t");
+        results.append(jobId);
+        results.append("\r\nInput:\t");
+        for (int i = 0; i < inputBufferSize; i++) {
+            results.append(readCache((codeSize + i)*4)); //*4 to convert from words to bytes
+            results.append(" ");
+        }
+        results.append("\r\nOutput:\t");
+        for (int i = 0; i < outputBufferSize; i++) {
+            results.append(readCache((codeSize + inputBufferSize + i)*4));//*4 to convert from words to bytes
+            results.append(" ");
+        }
+        results.append("\r\nTemp:\t");
+        for (int i = 0; i < tempBufferSize; i++) {
+            results.append(readCache((codeSize + inputBufferSize + outputBufferSize + i)*4));//*4 to convert from words to bytes
+            results.append(" ");
+        }
+        results.append("\r\n");
+
+        return results.toString();
+    }
+
 
     //debugging method - prints current instruction.
     public void printInstruction(Instruction instruction) {
@@ -455,33 +448,6 @@ public class CPU {
 
         }
     }
-
-    //for printing the results of the job to a file.
-    public String outputResults() {
-
-        StringBuilder results = new StringBuilder();
-        results.append("Job ID:\t");
-        results.append(jobId);
-        results.append("\r\nInput:\t");
-        for (int i = 0; i < inputBufferSize; i++) {
-            results.append(readCache((codeSize + i)*4)); //*4 to convert from words to bytes
-            results.append(" ");
-        }
-        results.append("\r\nOutput:\t");
-        for (int i = 0; i < outputBufferSize; i++) {
-            results.append(readCache((codeSize + inputBufferSize + i)*4));//*4 to convert from words to bytes
-            results.append(" ");
-        }
-        results.append("\r\nTemp:\t");
-        for (int i = 0; i < tempBufferSize; i++) {
-            results.append(readCache((codeSize + inputBufferSize + outputBufferSize + i)*4));//*4 to convert from words to bytes
-            results.append(" ");
-        }
-        results.append("\r\n");
-
-        return results.toString();
-    }
-
 
     //debugging method - prints registers and buffers to screen.
     public void printDataBuffers() {
@@ -532,9 +498,9 @@ public class CPU {
                 for (int i = 0; i < jobSize; i++) {
                     if (cache.modified[i]) {
                         MemorySystem.memory.writeMemoryAddress(getEffectiveAddress(i), cache.arr[i]);
-                        TimeUnit.NANOSECONDS.sleep(DMA_DELAY);
                     }
                 }
+                TimeUnit.NANOSECONDS.sleep(DMA_DELAY);
             }
             catch (InterruptedException ie) {
                 System.err.println("Invalid DMA handler interruption: " + ie.toString());

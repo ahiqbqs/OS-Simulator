@@ -1,10 +1,16 @@
-import java.util.LinkedList;
 
 public class ShortScheduler {
 
-    //pick a job to run off of the Ready Queue.
+    //select a free CPU.
     public static void schedule () {
-        Queues.runningQueue.push(Queues.readyQueue.pop());
-        //Queues.runningQueue.getFirst().status = PCB.state.RUNNING;
+
+        try {
+            Integer currFreeCPU = Queues.freeCpuQueue.take();
+            Dispatcher.dispatch(Driver.cpu[currFreeCPU]);
+
+        } catch (InterruptedException ie) {
+            System.err.println(ie.toString());
+        }
+
     }
 }
