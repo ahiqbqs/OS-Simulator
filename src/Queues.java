@@ -1,5 +1,6 @@
 import java.util.LinkedList;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.SynchronousQueue;
 
 public class Queues {
 
@@ -12,7 +13,7 @@ public class Queues {
 
     static LinkedBlockingQueue<Integer> freeCpuQueue;
 
-    static LinkedBlockingQueue<Integer>[] cpuActiveQueue;
+    static SynchronousQueue<Integer>[] cpuActiveQueue;
 
     static public void initQueues () {
         diskQueue = new LinkedList<>();
@@ -31,13 +32,13 @@ public class Queues {
         //cpuActiveQueue: array of 4 activeQueues, of size 1.
         //dispatcher fills it to signal CPU.  cpu waits for it and takes, then runs.
         //Driver loads with -1 to shutdown the CPU's.
-        cpuActiveQueue = new LinkedBlockingQueue[CPU.CPU_COUNT];
+        cpuActiveQueue = new SynchronousQueue[CPU.CPU_COUNT];
 
 
         for (int i = 0 ; i < CPU.CPU_COUNT; i++) {
             runningQueues[i] = new LinkedList<>();
             freeCpuQueue.add(i);
-            cpuActiveQueue[i] = new LinkedBlockingQueue<>(1);
+            cpuActiveQueue[i] = new SynchronousQueue();
         }
     }
 }

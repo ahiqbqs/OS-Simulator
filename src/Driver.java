@@ -25,7 +25,7 @@ public class Driver {
         int iterations;
 
         ArrayList<MemoryClass> coreDumpArray;
-        int numTimingFields = 4;    //4 columns: Job #, Waiting Time, Completion Time, Execution Time
+        int numTimingFields = 5;    //4 columns: jobId, cpuId, Waiting Time, Completion Time, Execution Time.
         long [][][] timingArray = null;
         long [][] avgTimingArray;   //just Waiting Time(avg) and Completion Time(avg)
         int numJobs = 0;
@@ -36,7 +36,7 @@ public class Driver {
         /////////////////////////////////////////////////////////////////////////////////
 
         System.out.println ("Welcome to the SimpleOS Simulator.\t");
-        System.out.print ("Enter Scheduling Policy (1 for FIFO, 2 for Priority:\t");
+        System.out.print ("Enter Scheduling Policy (1 for FIFO, 2 for Priority, 3 for SJF:\t");
         int policy = userInput.nextInt();
 
         System.out.print ("Log output for 1 iteration?(y/n)\t");
@@ -98,8 +98,7 @@ public class Driver {
                             synchronized (syncObject) {
                                 try {
                                     syncObject.wait();
-                                }
-                                catch (InterruptedException ie) {
+                                } catch (InterruptedException ie) {
                                     System.err.println(ie.toString());
                                 }
                             }
@@ -121,33 +120,34 @@ public class Driver {
                 //                          END Main Driver Loop
                 /////////////////////////////////////////////////////////////////////////////////
 
-                if (logging) {
-                    writeOutputFile ();
-                    writeCoreDumpFiles (coreDumpArray);
-
-                    if (CHECK_OUTPUT_MODE)
-                        //compare output to gold standard
-                        checkOutputIsCorrect();
-                }
-
                 //create timing array (if not already created)
                 if (timingArray == null) {
-                    timingArray = new long [iterations][Queues.doneQueue.size()][numTimingFields];
+                    timingArray = new long[iterations][Queues.doneQueue.size()][numTimingFields];
                 }
                 saveTimingDataForThisIteration(i, timingArray);
+
+
+                if (logging) {
+                    writeOutputFile();
+                    writeCoreDumpFiles(coreDumpArray);
+                    if (CHECK_OUTPUT_MODE) {
+                        //compare output to gold standard
+                        //do this after writing output files, because it sorts the DoneQueue.
+                        checkOutputIsCorrect();
+                    }
+                }
 
 
                 //shutdown the CPU's.
                 for (int k = 0; k < CPU.CPU_COUNT; k++) {
                     try {
                         Queues.cpuActiveQueue[k].put(-1);
-                    }
-                    catch (InterruptedException ie) {
+                    } catch (InterruptedException ie) {
                         System.err.println(ie.toString());
                     }
                 }
-
                 executor.shutdown();
+
             }
         }
 
@@ -222,7 +222,8 @@ public class Driver {
             output.println(strMemUsage);
 
             for (PCB thisPCB : Queues.doneQueue) {
-                output.println("Job:" + thisPCB.jobId + "\tNumber of io operations: " + thisPCB.trackingInfo.ioCounter);
+                output.println("Job:" + thisPCB.jobId + "\tNumber of io operations: " + thisPCB.trackingInfo.ioCounter
+                    + "\tJobSize: " + thisPCB.getJobSizeInMemory() + "\tCPUid: " + thisPCB.cpuId);
             }
 
             for (PCB thisPCB : Queues.doneQueue) {
@@ -268,9 +269,10 @@ public class Driver {
             //runStartTime  - time first started executing (entered Running Queue, set by Dispatcher)
             //runEndTime    - Completion Time = runEndTime - waitStartTime?
             timingArray[i][j][0] = thisPCB.jobId;
-            timingArray[i][j][1] = thisPCB.trackingInfo.runStartTime - thisPCB.trackingInfo.waitStartTime;
-            timingArray[i][j][2] = thisPCB.trackingInfo.runEndTime - thisPCB.trackingInfo.waitStartTime;
-            timingArray[i][j][3] = thisPCB.trackingInfo.runEndTime - thisPCB.trackingInfo.runStartTime;
+            timingArray[i][j][1] = thisPCB.cpuId;
+            timingArray[i][j][2] = thisPCB.trackingInfo.runStartTime - thisPCB.trackingInfo.waitStartTime;
+            timingArray[i][j][3] = thisPCB.trackingInfo.runEndTime - thisPCB.trackingInfo.waitStartTime;
+            timingArray[i][j][4] = thisPCB.trackingInfo.runEndTime - thisPCB.trackingInfo.runStartTime;
             j++;
         }
     }
@@ -284,24 +286,26 @@ public class Driver {
             java.io.PrintWriter timing = new java.io.PrintWriter(timingFile);
 
             timing.println("Data is in nanoseconds (divide by 1000000 to get milliseconds, 10^9 to get seconds.)");
-            timing.println("Job#,AvgWaitTime,AvgCompletionTime,AvgRunTime");
+            timing.println("Job#,CPU#,AvgWaitTime,AvgCompletionTime,AvgRunTime");
             for (int i = 0; i < numJobs; i++) {
                 avgTimingArray[i][0] = timingArray[0][i][0];        //job number
+                avgTimingArray[i][1] = timingArray[0][i][1];        //CPU number
                 timing.print(avgTimingArray[i][0] + ",");
-
-                for (int j = 0; j < iterations; j++) {
-                    avgTimingArray[i][1] += timingArray[j][i][1];   //sum wait times
-                    avgTimingArray[i][2] += timingArray[j][i][2];   //sum completion times
-                    avgTimingArray[i][3] += timingArray[j][i][3];   //sum execution times
-                }
-                avgTimingArray[i][1] = Math.round((double) avgTimingArray[i][1] / (double) iterations);  //take avg of wait times across the iterations (NANOSECONDS)
                 timing.print(avgTimingArray[i][1] + ",");
 
-                avgTimingArray[i][2] = Math.round((double) avgTimingArray[i][2] / (double) iterations);  //take avg of completion times across the iterations (NANOSECONDS)
+                for (int j = 0; j < iterations; j++) {
+                    avgTimingArray[i][2] += timingArray[j][i][2];   //sum wait times
+                    avgTimingArray[i][3] += timingArray[j][i][3];   //sum completion times
+                    avgTimingArray[i][4] += timingArray[j][i][4];   //sum execution times
+                }
+                avgTimingArray[i][2] = Math.round((double) avgTimingArray[i][2] / (double) iterations);  //take avg of wait times across the iterations (NANOSECONDS)
                 timing.print(avgTimingArray[i][2] + ",");
 
-                avgTimingArray[i][3] = Math.round((double) avgTimingArray[i][3] / (double) iterations);  //take avg of execution times across the iterations (NANOSECONDS)
+                avgTimingArray[i][3] = Math.round((double) avgTimingArray[i][3] / (double) iterations);  //take avg of completion times across the iterations (NANOSECONDS)
                 timing.print(avgTimingArray[i][3] + ",");
+
+                avgTimingArray[i][4] = Math.round((double) avgTimingArray[i][4] / (double) iterations);  //take avg of execution times across the iterations (NANOSECONDS)
+                timing.print(avgTimingArray[i][4] + ",");
 
                 timing.println();
             }
@@ -313,9 +317,9 @@ public class Driver {
             double avgCompletionTime = 0;
             double avgExecutionTime = 0;
             for (int i = 0; i < numJobs; i++) {
-                avgWaitTime += avgTimingArray[i][1];
-                avgCompletionTime += avgTimingArray[i][2];
-                avgExecutionTime += avgTimingArray[i][3];
+                avgWaitTime += avgTimingArray[i][2];
+                avgCompletionTime += avgTimingArray[i][3];
+                avgExecutionTime += avgTimingArray[i][4];
             }
             avgWaitTime = avgWaitTime / (double) numJobs;
             avgCompletionTime = avgCompletionTime / (double) numJobs;

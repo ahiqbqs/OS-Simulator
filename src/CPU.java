@@ -4,7 +4,7 @@ import java.util.concurrent.TimeUnit;
 public class CPU implements Runnable {
 
     public static final int NUM_REGISTERS = 16;
-    public static final int DMA_DELAY = 20;     //delay DMA by X nanoseconds to simulate actual IO.
+    public static final int DMA_DELAY = 10;     //delay DMA by X nanoseconds to simulate actual IO.
 
     public static final int CACHE_SIZE = 80;    //longest program is 72 words0
 
@@ -86,6 +86,13 @@ public class CPU implements Runnable {
                 }
 
                 if (goodFinish) {
+
+                    //calculate number of IO operations
+                    for (int i = 0; i < jobSize; i++) {
+                        if (cache.modified[i]) {
+                            ioCounter++;
+                        }
+                    }
 
                     //DMA thread: copy modified words back from cache to memory
                     DMA dma = new DMA();
@@ -181,7 +188,7 @@ public class CPU implements Runnable {
             //case Instruction.IO:
             case Instruction.RD:    //Reads content of I/P buffer into a accumulator
                 reg[instruction.reg1] = readCache(instruction.reg3 + reg[instruction.reg2]);
-                ioCounter++;
+                //ioCounter++;
                 break;
 
             //case Instruction.IO:
@@ -190,19 +197,19 @@ public class CPU implements Runnable {
                     writeCache(instruction.reg3, reg[instruction.reg1]);
                 else
                     writeCache(reg[instruction.reg2], reg[instruction.reg1]);
-                ioCounter++;
+                //ioCounter++;
                 break;
 
             //case Instruction.CBI:
             case Instruction.LW: //Loads the content of an address into a reg.
                 reg[instruction.reg2] = readCache(instruction.reg3 + reg[instruction.reg1]);
-                ioCounter++;
+                //ioCounter++;
                 break;
 
             //case Instruction.CBI:
             case Instruction.ST: //Stores content of a reg. into an address
                 writeCache(reg[instruction.reg2] + instruction.reg3, reg[instruction.reg1]);
-                ioCounter++;
+                //ioCounter++;
                 break;
 
 
@@ -500,7 +507,7 @@ public class CPU implements Runnable {
                         MemorySystem.memory.writeMemoryAddress(getEffectiveAddress(i), cache.arr[i]);
                     }
                 }
-                TimeUnit.NANOSECONDS.sleep(DMA_DELAY);
+                TimeUnit.NANOSECONDS.sleep(DMA_DELAY*ioCounter);
             }
             catch (InterruptedException ie) {
                 System.err.println("Invalid DMA handler interruption: " + ie.toString());

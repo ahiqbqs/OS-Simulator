@@ -8,6 +8,7 @@ public class LongScheduler {
 
     final static int FIFO = 1;
     final static int PRIORITY = 2;
+    final static int SJF = 3;
     final static int NUM_JOBS_TO_LOAD = 15;     //in class, suggested loading 15 at a time.
 
     int algorithm = FIFO;                       //current scheduling algorithm.
@@ -27,8 +28,19 @@ public class LongScheduler {
             //algorithms:
             //FIFO - in order listed in diskQueue.
             //PRIORITY - in order of Priority (16 = highest priority, 0 = lowest?)
+            //SJF - shortest job first.
             if (algorithm == PRIORITY) {
                 Queues.diskQueue.sort((PCB o1, PCB o2) -> o2.priority - o1.priority);
+            } else if (algorithm == SJF) {
+                Queues.diskQueue.sort((PCB o1, PCB o2) -> o1.getJobSizeInMemory() - o2.getJobSizeInMemory());
+                //diskQueue.sort((PCB o1, PCB o2) -> o1.getCodeSize() - o2.getCodeSize());
+                /*
+                for (PCB thisPCB : Queues.diskQueue) {
+                    System.out.print(thisPCB.jobId + "\t");
+                    System.out.print(thisPCB.getJobSizeInMemory() + "\t");
+                    System.out.print(thisPCB.codeSize + "\t");
+                    System.out.println();
+                }*/
             }
 
             int jobCounter = 0;  //track number of jobs loaded

@@ -47,6 +47,8 @@ public class Dispatcher {
 
         System.arraycopy (cpu.reg, 0, currJob.registers, 0, currJob.registers.length);
 
+        currJob.cpuId = cpu.cpuId;
+
         currJob.pc = cpu.pc;
         currJob.goodFinish = cpu.goodFinish;   //set to true when job completes properly (HLT) - this variable may not be necessary.
         currJob.trackingInfo.ioCounter = cpu.ioCounter;

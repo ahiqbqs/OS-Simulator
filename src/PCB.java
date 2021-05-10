@@ -33,6 +33,7 @@ public class PCB {
 
     boolean goodFinish;
 
+    int cpuId;
 
     //public enum state {NEW, READY, RUNNING, BLOCKED, COMPLETE};
     //state status;  //{new, ready, running, blocked}
